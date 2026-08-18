@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SMT Hattı Simülasyonu — Darboğaz Analizi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#0a1712; --panel:#0f231a; --panel-raised:#152c20; --panel-line:#1f4030;
+    --copper:#c98a4a; --gold:#d9b26a; --ok:#2f9e63; --ok-bright:#4fd88a;
+    --alert:#e8562f; --alert-bright:#ff7a4d; --text:#eef2ea; --text-dim:#8fa899; --text-dimmer:#5c7568;
+    font-family: 'IBM Plex Sans', sans-serif;
+  }
+  body.light-theme{
+    --void:#ffffff; --panel:#f7f5f1; --panel-raised:#ffffff; --panel-line:#d9d3c8;
+    --text:#141210; --text-dim:#4a463f; --text-dimmer:#8a8478;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--void);color:var(--text);}
+  body{
+    background:
+      radial-gradient(circle at 15% 10%, rgba(47,158,99,0.07), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(201,138,74,0.06), transparent 40%),
+      var(--void);
+    min-height:100vh; padding:28px 16px 60px;
+  }
+  .wrap{max-width:100%;margin:0;}
+  header{margin-bottom:22px;}
+  .eyebrow{font-family:'IBM Plex Mono',monospace; font-size:11px;letter-spacing:.18em;text-transform:uppercase; color:var(--copper); margin:0 0 6px;}
+  h1{font-family:'IBM Plex Mono',monospace; font-size:clamp(22px,3.4vw,34px); font-weight:700;letter-spacing:-0.01em; margin:0 0 6px; color:var(--text);}
+  .sub{color:var(--text-dim); font-size:14px; max-width:700px; line-height:1.5;}
+
+  .hmi{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px;
+    background:var(--panel-line); border:1px solid var(--panel-line); border-radius:10px;
+    overflow:hidden; margin:22px 0 30px;
+  }
+  .hmi-cell{ background:var(--panel); padding:14px 16px; }
+  .hmi-cell .label{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-dimmer); margin-bottom:6px;}
+  .hmi-cell .value{font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:600; color:var(--ok-bright); display:flex; align-items:baseline; gap:5px;}
+  .hmi-cell .value.alert{color:var(--alert-bright);}
+  .hmi-cell .value .unit{font-size:12px;color:var(--text-dim);font-weight:400;}
+  .hmi-cell .value .name{font-size:15px; line-height:1.25;}
+
+  .section-title{ display:flex; align-items:center; gap:10px; margin:34px 0 16px; flex-wrap:wrap; }
+  .section-title .n{font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--void); background:var(--copper); padding:3px 8px; border-radius:4px; font-weight:700; letter-spacing:.05em;}
+  .section-title h2{font-family:'IBM Plex Mono',monospace; font-size:15px; letter-spacing:.04em; text-transform:uppercase; margin:0; color:var(--text);}
+  .section-title .tagline{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-dimmer); background:var(--panel); border:1px solid var(--panel-line); padding:3px 8px; border-radius:5px;}
+  .section-title .line{flex:1; height:1px; background:var(--panel-line); min-width:20px;}
+  .reset-btn{font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.04em; color:var(--text-dim); background:var(--panel); border:1px solid var(--panel-line); border-radius:6px; padding:6px 10px; cursor:pointer; transition:color .2s, border-color .2s;}
+  .reset-btn:hover{color:var(--copper); border-color:var(--copper);}
+  .theme-toggle{
+    position:fixed; top:16px; right:16px; z-index:50;
+    font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.04em;
+    color:var(--text); background:var(--panel); border:1px solid var(--panel-line);
+    border-radius:20px; padding:7px 14px; cursor:pointer; transition:border-color .2s;
+  }
+  .theme-toggle:hover{border-color:var(--copper);}
+
+  .line-outer{position:relative; padding:26px 4px 10px;}
+  .flow-track{position:absolute; top:26px; left:0; right:0; height:2px; background:repeating-linear-gradient(90deg, var(--panel-line) 0 6px, transparent 6px 11px); z-index:0;}
+  .flow-dot{position:absolute; top:26px; width:9px; height:9px; border-radius:50%; background:var(--gold); box-shadow:0 0 8px 2px rgba(217,178,106,0.6); transform:translate(-50%,-50%); z-index:1;}
+
+  .line{display:flex; overflow-x:auto; gap:0; padding-bottom:14px; position:relative; z-index:2; scrollbar-width:thin; scrollbar-color:var(--panel-line) transparent;}
+  .line::-webkit-scrollbar{height:6px;}
+  .line::-webkit-scrollbar-thumb{background:var(--panel-line); border-radius:3px;}
+
+  .chip{ flex:0 0 160px; margin-right:14px; position:relative; }
+  .chip-num{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-dimmer); margin-bottom:6px; letter-spacing:.05em;}
+  .chip-body{background:var(--panel-raised); border:1px solid var(--panel-line); border-radius:8px; padding:12px 12px 14px; position:relative; transition:box-shadow .3s, border-color .3s;}
+  .chip-body::before, .chip-body::after{content:""; position:absolute; left:14px; right:14px; height:2px; background:repeating-linear-gradient(90deg, var(--copper) 0 4px, transparent 4px 9px); opacity:.55;}
+  .chip-body::before{top:-3px;}
+  .chip-body::after{bottom:-3px;}
+
+  .chip.bottleneck .chip-body{border-color:var(--alert); box-shadow:0 0 0 1px var(--alert), 0 0 18px 2px rgba(232,86,47,0.35); animation:pulse 1.6s ease-in-out infinite;}
+  @keyframes pulse{
+    0%,100%{box-shadow:0 0 0 1px var(--alert), 0 0 14px 1px rgba(232,86,47,0.28);}
+    50%{box-shadow:0 0 0 1px var(--alert-bright), 0 0 24px 4px rgba(232,86,47,0.5);}
+  }
+  .chip.passive .chip-body{opacity:.55; border-style:dashed;}
+  .chip.passive .chip-name::after{content:" · pasif"; color:var(--text-dimmer); font-weight:400;}
+
+  .chip-name{font-size:12.5px; font-weight:600; color:var(--text); line-height:1.25; min-height:32px; margin-bottom:10px;}
+  .chip-time{display:flex; align-items:center; gap:6px; margin-bottom:8px;}
+  .chip-time input{width:52px; background:var(--void); border:1px solid var(--panel-line); color:var(--text); font-family:'IBM Plex Mono',monospace; font-size:14px; font-weight:600; padding:4px 6px; border-radius:4px; text-align:center;}
+  .chip-time input:focus{outline:none; border-color:var(--copper);}
+  .chip-time span{font-size:10px; color:var(--text-dimmer); font-family:'IBM Plex Mono',monospace;}
+  .cap-input{width:36px !important; color:var(--copper) !important;}
+  .chip-time2{display:flex; align-items:center; gap:5px; flex-wrap:wrap; margin-bottom:9px; font-size:9px;}
+  .chip-time2 span{font-size:9px; color:var(--text-dimmer); font-family:'IBM Plex Mono',monospace;}
+
+  .chip-bar{height:5px; background:var(--void); border-radius:3px; overflow:hidden; margin-bottom:6px;}
+  .chip-bar-fill{height:100%; background:var(--ok); border-radius:3px; transition:width .25s;}
+  .chip.bottleneck .chip-bar-fill{background:var(--alert-bright);}
+  .chip-idle{font-size:10px; color:var(--text-dimmer); font-family:'IBM Plex Mono',monospace; line-height:1.4;}
+  .chip.bottleneck .chip-idle{color:var(--alert-bright);}
+
+  .chip-queue{display:flex; align-items:center; gap:6px; margin-top:9px; font-size:10px; color:var(--text-dimmer); font-family:'IBM Plex Mono',monospace;}
+  .q-badge{font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:700; padding:1px 8px; border-radius:9px; background:var(--void); border:1px solid var(--panel-line); color:var(--ok-bright); transition:color .2s, border-color .2s, background .2s;}
+  .q-badge.warn{color:var(--gold); border-color:var(--gold); background:rgba(217,178,106,0.1);}
+  .q-badge.crit{color:var(--alert-bright); border-color:var(--alert-bright); background:rgba(232,86,47,0.14);}
+  .chip.active .chip-body{border-color:var(--copper);}
+  .chip.down .chip-body{border-color:var(--alert); background:repeating-linear-gradient(135deg, var(--panel-raised), var(--panel-raised) 8px, rgba(232,86,47,0.08) 8px, rgba(232,86,47,0.08) 16px);}
+  .chip.down .q-badge{color:var(--alert-bright); border-color:var(--alert-bright); background:rgba(232,86,47,0.14);}
+
+  .branch-pill{margin-top:8px; font-size:10px; font-family:'IBM Plex Mono',monospace; color:var(--text-dim); background:var(--void); border:1px solid var(--panel-line); border-radius:5px; padding:4px 7px; display:inline-block;}
+
+  .chip-note{
+    width:100%; margin-top:10px; resize:vertical; min-height:34px;
+    background:var(--void); border:1px dashed var(--panel-line); border-radius:5px;
+    color:var(--text-dim); font-family:'IBM Plex Sans',sans-serif; font-size:10.5px;
+    padding:6px 7px; line-height:1.4;
+  }
+  .chip-note:focus{outline:none; border-color:var(--copper); border-style:solid;}
+  .chip-note::placeholder{color:var(--text-dimmer);}
+
+  .insight{margin-top:18px; border:1px solid var(--panel-line); border-radius:8px; background:var(--panel); padding:16px 18px; font-size:13.5px; line-height:1.6; color:var(--text-dim);}
+  .insight b{color:var(--text); font-weight:600;}
+  .insight .tag{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.1em; color:var(--alert-bright); text-transform:uppercase; display:block; margin-bottom:6px;}
+
+  .caption{color:var(--text-dimmer); font-size:11.5px; margin-top:10px; font-family:'IBM Plex Mono',monospace; line-height:1.6;}
+
+  .setup-marker{display:flex; align-items:center; gap:14px; margin:22px 0 8px;}
+  .setup-line{flex:1; height:1px; background:repeating-linear-gradient(90deg, var(--copper) 0 5px, transparent 5px 10px); opacity:.6;}
+  .setup-box{
+    display:flex; align-items:center; gap:8px; flex-shrink:0;
+    background:var(--panel); border:1px solid var(--copper); border-radius:20px;
+    padding:8px 16px; font-family:'IBM Plex Mono',monospace; font-size:11px;
+  }
+  .setup-icon{color:var(--copper); font-size:14px;}
+  .setup-label{color:var(--text); letter-spacing:.03em; text-transform:uppercase; font-size:10px;}
+  .setup-box input{
+    width:44px; background:var(--void); border:1px solid var(--panel-line); color:var(--copper);
+    font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:700; padding:3px 5px;
+    border-radius:4px; text-align:center;
+  }
+  .setup-box input:focus{outline:none; border-color:var(--copper);}
+  .setup-unit{color:var(--text-dimmer); font-size:10px;}
+  footer{margin-top:40px; padding-top:16px; border-top:1px solid var(--panel-line); color:var(--text-dimmer); font-size:11.5px; font-family:'IBM Plex Mono',monospace;}
+  @media (max-width:600px){ .chip{flex:0 0 140px;} }
+</style>
+</head>
+<body>
+<button class="theme-toggle" id="theme-toggle">☾ Koyu / ☀ Açık</button>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Staj / Üretim Hattı Analizi</p>
+    <h1>SMT Hattı Simülasyonu</h1>
+    <p class="sub">Kart önce <b>BOT</b> (alt yüz), sonra <b>TOP</b> (üst yüz) hattından geçiyor, ardından Test Hattı. "Darboğaz (canlı)" etiketi artık en yüksek süreli istasyonu değil, <b>gerçekten kuyruk biriktirip diğerlerini bekleten</b> istasyonu gösteriyor. Her kutunun altında kendi notlarını yazabileceğin boş bir alan var.</p>
+  </header>
+
+  <div class="section-title"><span class="n">01</span><h2>Bot Hattı</h2><span class="tagline">alt yüz — önce bu</span><div class="line"></div><button class="reset-btn" id="reset-bot">↺ Sıfırla</button></div>
+  <div class="hmi" id="hmi-bot"></div>
+  <div class="line-outer">
+    <div class="flow-track"></div>
+    <div class="flow-dot" id="dot-bot" style="left:0%"></div>
+    <div class="line" id="line-bot"></div>
+  </div>
+  <div class="insight" id="insight-bot"></div>
+  <p class="caption">* Bot yüzünde Laser Marker ve tüm istasyonlar aktif çalışıyor.</p>
+
+  <div class="setup-marker">
+    <div class="setup-line"></div>
+    <div class="setup-box">
+      <span class="setup-icon">⇄</span>
+      <span class="setup-label">SETUP — Bot → Top geçiş</span>
+      <input type="number" min="0" id="setup-time" value="15">
+      <span class="setup-unit">dk (tahmini)</span>
+    </div>
+    <div class="setup-line"></div>
+  </div>
+  <p class="caption">* Bot ve Top burada iki bağımsız paralel simülasyon olarak çalışıyor — bu süre canlı akışa değil, toplam gerçek süreye eklemen için bilgi amaçlı.</p>
+
+  <div class="section-title"><span class="n">02</span><h2>Top Hattı</h2><span class="tagline">üst yüz — sonra bu</span><div class="line"></div><button class="reset-btn" id="reset-top">↺ Sıfırla</button></div>
+  <div class="hmi" id="hmi-top"></div>
+  <div class="line-outer">
+    <div class="flow-track"></div>
+    <div class="flow-dot" id="dot-top" style="left:0%"></div>
+    <div class="line" id="line-top"></div>
+  </div>
+  <div class="insight" id="insight-top"></div>
+  <p class="caption">* Top yüzünde Laser Marker ve Surface Cleaner işlem yapmıyor, sadece 4 sn'lik geçiş. Süreler artık ölçülen gerçek değerler (Buffer Conveyor ve Unloader hâlâ örnek).</p>
+
+  <div class="section-title"><span class="n">03</span><h2>Test Hattı</h2><div class="line"></div><button class="reset-btn" id="reset-test">↺ Sıfırla</button></div>
+  <div class="hmi" id="hmi-test"></div>
+  <div class="line-outer">
+    <div class="flow-track"></div>
+    <div class="flow-dot" id="dot-test" style="left:0%"></div>
+    <div class="line" id="line-test"></div>
+  </div>
+  <div class="insight" id="insight-test"></div>
+  <p class="caption">* Paketleme (ESD → Patpat) tamamen elle yapılır, arıza olmaz; günlük (~100 adet) üretim birikince topluca sarılır — "batch" alanından birkaç günlük miktara da çekilebilir. Sonrasında montaj hattına teslim edilir.</p>
+
+  <footer>SMT HATTI SİMÜLASYONU · staj notlarından oluşturuldu</footer>
+</div>
+
+<script>
+const topStations = [
+  {name:"Press Makinesi", t:18},
+  {name:"Loader – Destacker", t:7},
+  {name:"Flipper", t:8},
+  {name:"Nanotron Laser Marker", t:4, passive:true, branch:"pasif — sadece geçiş"},
+  {name:"Surface Cleaner (Conv-1)", t:4, passive:true, branch:"pasif — sadece geçiş"},
+  {name:"CPX Printer", t:23.24, dist:"triangular"},
+  {name:"SPI (Solder Paste Insp.)", t:14.01, dist:"triangular"},
+  {name:"Pick & Place 1", t:15.6, mtbf:7500},
+  {name:"Pick & Place 2", t:14.3, mtbf:7500},
+  {name:"Pick & Place 3", t:15.5, mtbf:7500},
+  {name:"Pick & Place 4", t:16.3, mtbf:7500},
+  {name:"Pick & Place 5", t:17, mtbf:7500},
+  {name:"Pick & Place 6", t:16.8, mtbf:7500},
+  {name:"Pick & Place 7", t:17.2, mtbf:7500},
+  {name:"Pick & Place 8", t:15.3, mtbf:7500},
+  {name:"Pick & Place 9", t:18.4, mtbf:7500},
+  {name:"Pick & Place 10", t:18.1, mtbf:7500},
+  {name:"Pick & Place 11", t:13.9, mtbf:7500},
+  {name:"AOI Xceed-1", t:10, dist:"triangular", defectRate:0.04, branch:"↳ NG Buffer → Reject Konveyör"},
+  {name:"Pick & Place Kalkan-1", t:22.1, mtbf:7500},
+  {name:"Pick & Place Kalkan-2", t:7, mtbf:7500},
+  {name:"Oven (Reflow)", t:300, capacity:12, capacitySlot:true},
+  {name:"Buffer Conveyor (Conv-5)", t:7},
+  {name:"AOI Xceed-2", t:18, dist:"triangular", defectRate:0.04},
+  {name:"OK/NG Unloader", t:10, branch:"↳ TAMIR"},
+  {name:"MT200 Cutting", t:22.59, batchSize:50, branch:"↳ X-Ray"},
+];
+
+// BOT: Laser Marker ve Surface Cleaner aktif, Kalkan-2 pasif, Cutting hiç yok (top bitmeden kesilmiyor)
+const botStations = [
+  {name:"Press Makinesi", t:18},
+  {name:"Loader – Destacker", t:7},
+  {name:"Flipper", t:8},
+  {name:"Nanotron Laser Marker", t:30.4},
+  {name:"Surface Cleaner (Conv-1)", t:9},
+  {name:"CPX Printer", t:22.88, dist:"triangular"},
+  {name:"SPI (Solder Paste Insp.)", t:12, dist:"triangular"},
+  {name:"Pick & Place 1", t:34.2, mtbf:7500},
+  {name:"Pick & Place 2", t:33.9, mtbf:7500},
+  {name:"Pick & Place 3", t:35.7, mtbf:7500},
+  {name:"Pick & Place 4", t:34.9, mtbf:7500},
+  {name:"Pick & Place 5", t:36.2, mtbf:7500},
+  {name:"Pick & Place 6", t:38, mtbf:7500},
+  {name:"Pick & Place 7", t:35.9, mtbf:7500},
+  {name:"Pick & Place 8", t:38.33, mtbf:7500},
+  {name:"Pick & Place 9", t:38.33, mtbf:7500},
+  {name:"Pick & Place 10", t:38.33, mtbf:7500},
+  {name:"Pick & Place 11", t:34.2, mtbf:7500},
+  {name:"AOI Xceed-1", t:12, dist:"triangular", defectRate:0.04, branch:"↳ NG Buffer → Reject Konveyör"},
+  {name:"Pick & Place Kalkan-1", t:17.8, mtbf:7500},
+  {name:"Pick & Place Kalkan-2", t:1, passive:true, branch:"pasif — bu yüzde uygulanmıyor", mtbf:7500},
+  {name:"Oven (Reflow)", t:300, capacity:12, capacitySlot:true},
+  {name:"Buffer Conveyor (Conv-5)", t:7},
+  {name:"AOI Xceed-2", t:13, dist:"triangular", defectRate:0.04},
+  {name:"OK/NG Unloader", t:10, branch:"↳ TAMIR"},
+];
+
+const testStations = [
+  {name:"Yazılım İndirme", t:110, groupBatch:4, branch:"↳ Barkod Okutuldu"},
+  {name:"Anten Testi", t:110, capacity:3, capacitySlot:true, branch:"↳ Barkod Okutuldu"},
+  {name:"MMI Testi", t:290},
+  {name:"Termal Macun Uyg. (Dispenser)", t:20, mtbf:999999999},
+  {name:"Görsel Kontrol", t:8, batchSize:3, mtbf:999999999},
+  {name:"Tek Kart Ön Kontrol (FQC)", t:18, sampleRate:0.25, mtbf:999999999},
+  {name:"ESD Koruyucu Ambalajlama", t:15.66, batchSize:100, mtbf:999999999},
+  {name:"Balonlu Naylon (Patpat) Ambalajlama", t:31.5, batchSize:100, mtbf:999999999},
+];
+
+const LINES = [
+  {key:"bot",  stations:botStations,  containerId:"line-bot",  hmiId:"hmi-bot",  insightId:"insight-bot",  dotId:"dot-bot"},
+  {key:"top",  stations:topStations,  containerId:"line-top",  hmiId:"hmi-top",  insightId:"insight-top",  dotId:"dot-top"},
+  {key:"test", stations:testStations, containerId:"line-test", hmiId:"hmi-test", insightId:"insight-test", dotId:"dot-test"},
+];
+
+function buildLine(containerId, stations, hmiId, insightId, dotId, key){
+  const line = document.getElementById(containerId);
+  line.innerHTML = "";
+  stations.forEach((s, i) => {
+    const chip = document.createElement("div");
+    chip.className = "chip" + (s.passive ? " passive" : "");
+    chip.dataset.idx = i;
+    chip.innerHTML = `
+      <div class="chip-num">${String(i+1).padStart(2,"0")}</div>
+      <div class="chip-body">
+        <div class="chip-name">${s.name}</div>
+        <div class="chip-time">
+          <input type="number" min="1" value="${s.t}" data-idx="${i}" data-key="${key}" data-field="t">
+          <span>sn</span>
+        </div>
+        ${(s.capacitySlot || s.batchSize || s.groupBatch || s.sampleRate!==undefined) ? `
+        <div class="chip-time2">
+          ${s.capacitySlot ? `<input type="number" min="1" value="${s.capacity||1}" data-idx="${i}" data-key="${key}" data-field="cap" class="cap-input"><span>slot</span>` : ""}
+          ${s.batchSize ? `<input type="number" min="1" value="${s.batchSize}" data-idx="${i}" data-key="${key}" data-field="batch" class="cap-input"><span>batch</span>` : ""}
+          ${s.groupBatch ? `<input type="number" min="1" value="${s.groupBatch}" data-idx="${i}" data-key="${key}" data-field="group" class="cap-input"><span>grup</span>` : ""}
+          ${s.sampleRate!==undefined ? `<input type="number" min="0" max="100" value="${Math.round(s.sampleRate*100)}" data-idx="${i}" data-key="${key}" data-field="sample" class="cap-input"><span>% örnek</span>` : ""}
+        </div>` : ""}
+        <div class="chip-bar"><div class="chip-bar-fill"></div></div>
+        <div class="chip-idle"></div>
+        <div class="chip-queue">Bekleyen: <span class="q-badge" data-q>0</span></div>
+        ${s.branch ? `<div class="branch-pill">${s.branch}</div>` : ""}
+        <textarea class="chip-note" rows="2" placeholder="Not ekle..."></textarea>
+      </div>
+    `;
+    line.appendChild(chip);
+  });
+
+  line.querySelectorAll("input").forEach(inp => {
+    inp.addEventListener("input", () => {
+      const idx = +inp.dataset.idx;
+      const field = inp.dataset.field;
+      const val = Math.max(1, +inp.value || 1);
+      if(field === "cap") stations[idx].capacity = val;
+      else if(field === "batch") stations[idx].batchSize = val;
+      else if(field === "group") stations[idx].groupBatch = val;
+      else if(field === "sample") stations[idx].sampleRate = Math.min(100,val)/100;
+      else stations[idx].t = val;
+      render(containerId, stations, hmiId, insightId, dotId);
+    });
+  });
+}
+
+function render(containerId, stations, hmiId, insightId, dotId){
+  const effT = s => s.t / (s.capacity||1);
+  const times = stations.map(effT);
+  const maxTime = Math.max(...times);
+  const maxIdx = times.indexOf(maxTime);
+  const throughput = Math.round(3600 / maxTime);
+
+  const idleVals = stations.map((s,i) => i === maxIdx ? 0 : Math.round((1 - effT(s)/maxTime)*100));
+  const avgIdle = Math.round(idleVals.reduce((a,b)=>a+b,0) / (stations.length-1 || 1));
+
+  document.getElementById(hmiId).innerHTML = `
+    <div class="hmi-cell">
+      <div class="label">Takt Süresi (teorik)</div>
+      <div class="value">${maxTime.toFixed(1)}<span class="unit">sn / adet</span></div>
+    </div>
+    <div class="hmi-cell">
+      <div class="label">Teorik Çıkış Hızı</div>
+      <div class="value">${throughput}<span class="unit">adet/saat</span></div>
+    </div>
+    <div class="hmi-cell">
+      <div class="label">En Yüksek Süre (teorik)</div>
+      <div class="value"><span class="name">${stations[maxIdx].name}</span></div>
+    </div>
+    <div class="hmi-cell">
+      <div class="label">Darboğaz (canlı)</div>
+      <div class="value alert" id="${hmiId}-livebottleneck"><span class="name">— henüz birikme yok</span></div>
+    </div>
+    <div class="hmi-cell">
+      <div class="label">Üretilen (canlı sim.)</div>
+      <div class="value" id="${hmiId}-completed">${Math.floor(stations.completed||0)}<span class="unit">adet</span></div>
+    </div>
+    <div class="hmi-cell">
+      <div class="label">Reddedilen (NG)</div>
+      <div class="value alert" id="${hmiId}-rejected">${Math.floor(stations.rejected||0)}<span class="unit">adet</span></div>
+    </div>
+  `;
+
+  document.querySelectorAll(`#${containerId} .chip`).forEach((chip, i) => {
+    const s = stations[i];
+    const fill = Math.round((effT(s)/maxTime)*100);
+    chip.querySelector(".chip-bar-fill").style.width = fill + "%";
+    const idlePct = i===maxIdx ? 0 : Math.round((1 - effT(s)/maxTime)*100);
+    const capNote = (s.capacity||1) > 1 ? ` · ${s.t}sn/${s.capacity}slot=${effT(s).toFixed(1)}sn eşd.` : "";
+    chip.querySelector(".chip-idle").textContent = (i===maxIdx ? "en yüksek teorik süre" : `%${idlePct} teorik boşta`) + capNote;
+  });
+
+  document.getElementById(insightId).innerHTML = `
+    <span class="tag">Okuma</span>
+    Teorik olarak en uzun süreli istasyon <b>${stations[maxIdx].name}</b> (${maxTime.toFixed(1)} sn/adet →
+    ${throughput} adet/saat tavan). Ama gerçek darboğaz bu olmak zorunda değil — bazı istasyonların paralel
+    kapasitesi (slot) veya batch mantığı var, bu yüzden yukarıdaki <b>"Darboğaz (canlı)"</b> etiketine bak:
+    o, süresi değil, <b>gerçekten önünde kuyruk biriktiren</b> istasyonu gösteriyor.
+  `;
+
+  const dot = document.getElementById(dotId);
+  const scaledDuration = Math.min(16, Math.max(3, maxTime / 3));
+  dot.style.transition = "none";
+  dot.style.left = "0%";
+  requestAnimationFrame(() => {
+    dot.style.transition = `left ${scaledDuration}s linear`;
+    dot.style.left = "100%";
+  });
+}
+
+function startLoop(dotId, stations){
+  const dot = document.getElementById(dotId);
+  function loop(){
+    const maxTime = Math.max(...stations.map(s => s.t/(s.capacity||1)));
+    const scaledDuration = Math.min(16, Math.max(3, maxTime / 3));
+    dot.style.transition = "none";
+    dot.style.left = "0%";
+    void dot.offsetWidth;
+    dot.style.transition = `left ${scaledDuration}s linear`;
+    dot.style.left = "100%";
+    setTimeout(loop, scaledDuration*1000);
+  }
+  loop();
+}
+
+LINES.forEach(L => buildLine(L.containerId, L.stations, L.hmiId, L.insightId, L.dotId, L.key));
+LINES.forEach(L => render(L.containerId, L.stations, L.hmiId, L.insightId, L.dotId));
+LINES.forEach(L => startLoop(L.dotId, L.stations));
+
+document.getElementById("theme-toggle").addEventListener("click", () => {
+  document.body.classList.toggle("light-theme");
+});
+
+document.body.addEventListener("input", (e) => {
+  if(e.target.tagName === "INPUT"){
+    const key = e.target.dataset.key;
+    const L = LINES.find(x => x.key === key);
+    if(L) render(L.containerId, L.stations, L.hmiId, L.insightId, L.dotId);
+  }
+});
+
+/* ===== Canlı kuyruk / bekleme simülasyonu + gerçek darboğaz tespiti ===== */
+const SIM_SPEED = 6;
+const TICK_MS = 150;
+
+const BUFFER_CAP = 10; // bir istasyon, bir sonrakinin kuyruğu bu sayıyı geçtiyse yeni parça başlatamaz (gerçekçi tampon sınırı)
+
+// Gerçek üretimde süreler sabit değil — her istasyon kendi dağılımından örnekleme yapar.
+// dist: 'triangular' (hataya meyilli/insan etkili istasyonlar) veya 'normal' (varsayılan, robotik/stabil).
+// devPct: ortalamanın yüzdesi olarak sapma (varsayılan ±%10).
+function sampleTime(s){
+  const mean = s.t;
+  const pct = s.devPct !== undefined ? s.devPct : 0.10;
+  if(pct <= 0) return mean;
+  if(s.dist === 'triangular'){
+    const min = mean * (1 - pct);
+    const max = mean * (1 + pct * 1.5); // hafif sağa çarpık: ara sıra beklenenden uzun sürer
+    const mode = mean;
+    const u = Math.random();
+    const Fc = (mode - min) / (max - min);
+    let x;
+    if(u < Fc) x = min + Math.sqrt(u * (max - min) * (mode - min));
+    else x = max - Math.sqrt((1 - u) * (max - min) * (max - mode));
+    return Math.max(0.3, x);
+  } else {
+    const std = mean * pct;
+    const u1 = Math.random(), u2 = Math.random();
+    const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    const x = mean + z * std;
+    return Math.max(0.3, Math.min(mean * (1 + 4*pct), x));
+  }
+}
+
+// Bir sonraki istasyona parça gönderir. Hedef istasyonun sampleRate'i varsa (örn. FQC),
+// gelenlerin sadece o yüzdesi kuyruğa girer, kalanı doğrudan tamamlanmış sayılır (örnekleme/atlama).
+function pushOut(stations, i, count){
+  const next = stations[i+1];
+  if(!next){ stations.completed = (stations.completed||0) + count; return; }
+  if(next.sampleRate !== undefined){
+    let accepted = 0;
+    for(let k=0;k<count;k++){ if(Math.random() < next.sampleRate) accepted++; }
+    if(accepted > 0) next.q = (next.q||0) + accepted;
+    const skipped = count - accepted;
+    if(skipped > 0) stations.completed = (stations.completed||0) + skipped;
+  } else {
+    next.q = (next.q||0) + count;
+  }
+}
+
+const MTBF_MEAN = 1500;  // ortalama ~25 dk'da bir duruş (simüle sn)
+const MTTR_MIN = 120, MTTR_MAX = 300; // onarım: 2-5 dk arası
+
+function updateDowntime(s, dt){
+  if(s.passive) return; // pasif/geçiş istasyonları bozulmaz
+  const mtbf = s.mtbf || MTBF_MEAN;
+  if(s.down===undefined) s.down = false;
+  if(s.down){
+    s.downRemaining -= dt;
+    if(s.downRemaining <= 0) s.down = false;
+  } else if(Math.random() < dt/mtbf){
+    s.down = true;
+    s.downRemaining = MTTR_MIN + Math.random()*(MTTR_MAX-MTTR_MIN);
+  }
+}
+
+function tick(stations, dt){
+  for(let i=0;i<stations.length;i++){
+    const s = stations[i];
+    updateDowntime(s, dt);
+    const next = stations[i+1];
+    const nextCap = next ? Math.max(BUFFER_CAP, next.batchSize||0, next.groupBatch||0) : Infinity;
+    const downstreamHasRoom = !next || (next.q||0) < nextCap;
+
+    // ===== SENKRON GRUP: N tanesi birlikte başlar, birlikte biter (örn. Yazılım İndirme) =====
+    if(s.groupBatch){
+      if(s.q===undefined) s.q = 0;
+      if(s.groupCount===undefined){ s.groupCount = 0; s.groupRemaining = 0; }
+      if(s.groupCount === 0 && !s.down && downstreamHasRoom && (i===0 || s.q >= s.groupBatch)){
+        const take = s.groupBatch;
+        if(i>0) s.q -= take;
+        s.groupCount = take;
+        s.groupRemaining = sampleTime(s);
+      }
+      if(s.groupCount > 0){
+        s.groupRemaining -= dt;
+        if(s.groupRemaining <= 0){
+          pushOut(stations, i, s.groupCount);
+          s.groupCount = 0;
+        }
+      }
+      continue;
+    }
+
+    const cap = s.capacity || 1;
+    const batchSize = s.batchSize || 1;
+    if(s.q===undefined) s.q = 0;
+    if(!s.slots) s.slots = [];
+    if(s.gateOpen===undefined) s.gateOpen = batchSize <= 1;
+
+    if(batchSize > 1){
+      if(!s.gateOpen && s.q >= batchSize) s.gateOpen = true;
+      if(s.gateOpen && s.q === 0 && s.slots.length === 0) s.gateOpen = false;
+    }
+
+    // "N tane gönder, sonra sıradaki istasyon tamamen bitirene kadar bekle" mantığı (örn. Barkod → Yazılım İndirme)
+    if(s.releaseBatch){
+      if(s.pushGateOpen===undefined){ s.pushGateOpen = true; s.pushedInBatch = 0; }
+      if(!s.pushGateOpen){
+        const next = stations[i+1];
+        const nextClear = !next || ((next.q||0) === 0 && (next.slots||[]).length === 0 && (next.groupCount||0) === 0);
+        if(nextClear){ s.pushGateOpen = true; s.pushedInBatch = 0; }
+      }
+    }
+    const releaseOk = !s.releaseBatch || s.pushGateOpen;
+
+    while(s.slots.length < cap && !s.down && (i===0 || (s.q>0 && s.gateOpen)) && downstreamHasRoom && releaseOk){
+      if(i>0) s.q -= 1;
+      s.slots.push(sampleTime(s));
+    }
+
+    for(let k=0;k<s.slots.length;k++) s.slots[k] -= dt;
+
+    const stillBusy = [];
+    for(let k=0;k<s.slots.length;k++){
+      if(s.slots[k] <= 0){
+        if(s.defectRate && Math.random() < s.defectRate){
+          stations.rejected = (stations.rejected||0) + 1;
+        } else {
+          pushOut(stations, i, 1);
+        }
+        if(s.releaseBatch){
+          s.pushedInBatch = (s.pushedInBatch||0) + 1;
+          if(s.pushedInBatch >= s.releaseBatch) s.pushGateOpen = false;
+        }
+      } else {
+        stillBusy.push(s.slots[k]);
+      }
+    }
+    s.slots = stillBusy;
+  }
+}
+
+function paintQueues(containerId, stations, hmiId){
+  let liveBottleneckIdx = -1;
+  let liveBottleneckQ = 1; // en az 2 bekleyen varsa gerçek birikme say
+
+  document.querySelectorAll(`#${containerId} .chip`).forEach((chip, i) => {
+    const s = stations[i];
+    const cap = s.capacity || 1;
+    const batchSize = s.batchSize || 1;
+    const busyCount = (s.slots||[]).length + (s.groupCount||0);
+    const badge = chip.querySelector(".q-badge");
+    const q = Math.max(0, Math.floor(s.q||0));
+    let text, crit=false, warn=false;
+    if(s.down){
+      text = `⛔ Arızalı (${Math.ceil(s.downRemaining)}sn)`;
+      crit = true;
+    } else if(s.groupBatch){
+      const gc = s.groupCount||0;
+      text = gc>0 ? `▶ ${gc}'lü grup işleniyor` : `${q}/${s.groupBatch} bekliyor (grup dolunca başlar)`;
+      warn = q>=3;
+    } else if(s.releaseBatch && !s.pushGateOpen){
+      text = `⏸ 4'ü bitirene kadar bekliyor`;
+    } else if(batchSize > 1){
+      if(!s.gateOpen){ text = `🔒 ${q}/${batchSize} birikiyor`; warn = q>0; }
+      else { text = `▶ kesiliyor (${q} sırada)`; }
+    } else if(cap > 1){
+      text = `${q} (${busyCount}/${cap} dolu)`;
+      warn = q>=3 && q<7; crit = q>=7;
+    } else {
+      text = q;
+      warn = q>=3 && q<7; crit = q>=7;
+    }
+    badge.textContent = text;
+    badge.classList.toggle("warn", warn);
+    badge.classList.toggle("crit", crit);
+    chip.classList.toggle("active", busyCount>0);
+    chip.classList.toggle("down", !!s.down);
+
+    // gerçek darboğaz: en çok bekleyeni olan istasyon (batch kilidi hariç, çünkü o "bekleme" değil "biriktirme")
+    if(q > liveBottleneckQ){ liveBottleneckQ = q; liveBottleneckIdx = i; }
+  });
+
+  document.querySelectorAll(`#${containerId} .chip`).forEach((chip, i) => {
+    chip.classList.toggle("bottleneck", i === liveBottleneckIdx);
+  });
+
+  const lb = document.getElementById(`${hmiId}-livebottleneck`);
+  if(lb){
+    lb.innerHTML = liveBottleneckIdx>=0
+      ? `<span class="name">${stations[liveBottleneckIdx].name} (${liveBottleneckQ} bekliyor)</span>`
+      : `<span class="name">— henüz birikme yok</span>`;
+  }
+
+  const completedEl = document.getElementById(`${hmiId}-completed`);
+  if(completedEl) completedEl.firstChild.textContent = Math.floor(stations.completed||0);
+  const rejectedEl = document.getElementById(`${hmiId}-rejected`);
+  if(rejectedEl) rejectedEl.firstChild.textContent = Math.floor(stations.rejected||0);
+}
+
+function resetSim(stations){
+  stations.forEach(s => {
+    s.q = 0; s.slots = []; s.gateOpen = (s.batchSize||1) <= 1;
+    s.down = false; s.downRemaining = 0;
+    if(s.releaseBatch){ s.pushGateOpen = true; s.pushedInBatch = 0; }
+    if(s.groupBatch){ s.groupCount = 0; s.groupRemaining = 0; }
+  });
+  stations.completed = 0;
+  stations.rejected = 0;
+}
+
+LINES.forEach(L => resetSim(L.stations));
+
+setInterval(() => {
+  const dt = (TICK_MS/1000) * SIM_SPEED;
+  LINES.forEach(L => {
+    tick(L.stations, dt);
+    paintQueues(L.containerId, L.stations, L.hmiId);
+  });
+}, TICK_MS);
+
+LINES.forEach(L => {
+  document.getElementById(`reset-${L.key}`).addEventListener("click", () => {
+    resetSim(L.stations);
+    paintQueues(L.containerId, L.stations, L.hmiId);
+  });
+});
+</script>
+</body>
+</html>
